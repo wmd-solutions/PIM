@@ -1,0 +1,78 @@
+<?php
+/**
+ * Fájl helye: php/config.php
+ * Funkció: Alapvető konfiguráció, globális hibakezelés és mappavédelem.
+ */
+
+// 1. BEÁLLÍTÁSOK
+ini_set('display_errors', 0); 
+ini_set('log_errors', 1);
+error_reporting(E_ALL);
+
+// Időkorlát és memória növelése
+set_time_limit(600); // 10 perc
+ini_set('memory_limit', '1024M'); // 1GB
+
+// Útvonalak
+define('BASE_PATH', __DIR__);
+define('LOG_PATH', BASE_PATH . '/logs');
+define('LANG_PATH', BASE_PATH . '/lang');
+define('TEMP_PATH', BASE_PATH . '/temp');
+define('JOBS_PATH', BASE_PATH . '/jobs');
+define('VENDOR_PATH', BASE_PATH . '/vendor/autoload.php');
+
+// Programok útvonala
+define('CALIBRE_BIN', 'ebook-convert'); 
+define('PHP_BIN', defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php');
+
+// reCAPTCHA beállítások
+define('RECAPTCHA_SITE_KEY', 'example');
+define('RECAPTCHA_SECRET_KEY', 'example');
+
+// 2. KÖRNYEZET ELŐKÉSZÍTÉSE
+if (file_exists(VENDOR_PATH)) {
+    require_once VENDOR_PATH;
+}
+
+if (!is_dir(LOG_PATH)) {
+    mkdir(LOG_PATH, 0777, true);
+}
+
+// Temp és Jobs mappa létrehozása és védelme
+$protectedDirs = [TEMP_PATH, JOBS_PATH];
+foreach ($protectedDirs as $dir) {
+    if (!is_dir($dir)) {
+        if (!mkdir($dir, 0777, true)) {
+            error_log("CRITICAL: Nem sikerült létrehozni a mappát: " . $dir);
+        }
+    }
+    $htaccessFile = $dir . '/.htaccess';
+    if (!file_exists($htaccessFile)) {
+        $content = "Order Deny,Allow\nDeny from all";
+        @file_put_contents($htaccessFile, $content);
+    }
+}
+
+// Nyelv betöltése
+$lang = [];
+if (file_exists(LANG_PATH . '/hu.php')) {
+    require_once LANG_PATH . '/hu.php';
+}
+
+// 3. KRITIKUS HIBAKEZELŐ (Shutdown function)
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR])) {
+        $logFile = LOG_PATH . '/debug.log';
+        $message = sprintf(
+            "[%s] [CRITICAL] FATAL PHP ERROR: %s in %s on line %d" . PHP_EOL,
+            date('Y-m-d H:i:s'),
+            $error['message'],
+            $error['file'],
+            $error['line']
+        );
+        @file_put_contents($logFile, $message, FILE_APPEND);
+    }
+});
+
+// Módosítás dátuma: 2025. december 13. 21:40:00
