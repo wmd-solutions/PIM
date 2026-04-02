@@ -1,5 +1,6 @@
 /* * Fájl helye: php/assets/css/style.css
  * Funkció: Az oldal stílusainak definíciója (Sötét mód támogatással).
+ * Módosítás dátuma: 2026. április 02. 12:15:00
  */
 
 body {
@@ -103,6 +104,25 @@ body {
     border-color: #764ba2;
 }
 
+/* ÚJ: PDF Dropzone stílusok */
+.pdf-dropzone {
+    border: 2px dashed #adb5bd !important;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.pdf-dropzone:hover, .pdf-dropzone.dragover {
+    border-color: #764ba2 !important;
+    background-color: #e9ecef !important;
+}
+
+.pdf-file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    word-break: break-word;
+}
+
 /* --- SÖTÉT MÓD (Bootstrap 5 data-bs-theme="dark") --- */
 [data-bs-theme="dark"] body {
     background-color: #121212;
@@ -146,6 +166,16 @@ body {
     border-color: #a78bfa;
 }
 
+[data-bs-theme="dark"] .pdf-dropzone {
+    border-color: #495057 !important;
+    background-color: #212529 !important;
+}
+
+[data-bs-theme="dark"] .pdf-dropzone:hover, [data-bs-theme="dark"] .pdf-dropzone.dragover {
+    border-color: #a78bfa !important;
+    background-color: #2c3237 !important;
+}
+
 /* QR Kód tároló */
 #qrCodeContainer {
     display: flex;
@@ -158,5 +188,3 @@ body {
     margin-left: auto;
     margin-right: auto;
 }
-
-/* Módosítás dátuma: 2025. december 13. 23:10:00 */
