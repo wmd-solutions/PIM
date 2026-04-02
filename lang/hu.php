@@ -2,6 +2,7 @@
 /**
  * Fájl helye: php/lang/hu.php
  * Funkció: Magyar nyelvi szövegek tárolása.
+ * Módosítás dátuma: 2026. április 02. 12:15:00
  */
 
 $lang = [
@@ -14,6 +15,7 @@ $lang = [
     // Fülek
     'tab_search' => 'Keresés',
     'tab_generator' => 'Generátor',
+    'tab_pdf' => 'PDF Eszközök', // ÚJ
 
     // Keresés fül
     'search_placeholder' => 'Szerző vagy cím keresése...',
@@ -50,6 +52,15 @@ $lang = [
     'btn_processing' => 'Feldolgozás...',
     'text_processing' => 'Konvertálás és feldolgozás folyamatban, kérlek várj...',
 
+    // ÚJ: PDF Eszközök fül
+    'pdf_merge_title' => 'PDF Fájlok Összefűzése',
+    'pdf_merge_desc' => 'Válassz ki több PDF fájlt (vagy húzd be őket), amiket egyetlen dokumentummá szeretnél fűzni. A sorrend a kiválasztás/behúzás sorrendje lesz.',
+    'pdf_dropzone' => 'Húzd ide a PDF fájlokat, vagy kattints a tallózáshoz',
+    'btn_upload_merge' => 'Kiválasztott fájlok összefűzése',
+    'pdf_uploading' => 'Fájlok feltöltése és feldolgozása...',
+    'err_pdf_min_two' => 'Kérlek válassz ki legalább két PDF fájlt az összefűzéshez!',
+    'err_pdf_invalid' => 'A fájl nem érvényes PDF: %s',
+
     // Eredmények
     'res_success_title' => 'Sikeres művelet!',
     'res_filename_label' => 'JAVASOLT FÁJLNÉV:',
@@ -67,5 +78,3 @@ $lang = [
     'err_missing_url' => 'Add meg az URL-t!',
     'err_processing' => 'Feldolgozási hiba',
 ];
-
-// Módosítás dátuma: 2025. december 13. 23:10:00

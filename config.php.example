@@ -2,6 +2,7 @@
 /**
  * Fájl helye: php/config.php
  * Funkció: Alapvető konfiguráció, globális hibakezelés és mappavédelem.
+ * Módosítás dátuma: 2026. április 02. 12:15:00
  */
 
 // 1. BEÁLLÍTÁSOK
@@ -19,10 +20,12 @@ define('LOG_PATH', BASE_PATH . '/logs');
 define('LANG_PATH', BASE_PATH . '/lang');
 define('TEMP_PATH', BASE_PATH . '/temp');
 define('JOBS_PATH', BASE_PATH . '/jobs');
+define('UPLOADS_PATH', BASE_PATH . '/temp/uploads'); // ÚJ: PDF feltöltések helye
 define('VENDOR_PATH', BASE_PATH . '/vendor/autoload.php');
 
 // Programok útvonala
 define('CALIBRE_BIN', 'ebook-convert'); 
+define('PDFTK_BIN', 'pdftk'); // ÚJ: pdftk bináris a PDF összefűzéshez
 define('PHP_BIN', defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php');
 
 // reCAPTCHA beállítások
@@ -38,8 +41,8 @@ if (!is_dir(LOG_PATH)) {
     mkdir(LOG_PATH, 0777, true);
 }
 
-// Temp és Jobs mappa létrehozása és védelme
-$protectedDirs = [TEMP_PATH, JOBS_PATH];
+// Temp, Jobs és Uploads mappa létrehozása és védelme
+$protectedDirs = [TEMP_PATH, JOBS_PATH, UPLOADS_PATH];
 foreach ($protectedDirs as $dir) {
     if (!is_dir($dir)) {
         if (!mkdir($dir, 0777, true)) {
@@ -74,5 +77,3 @@ register_shutdown_function(function() {
         @file_put_contents($logFile, $message, FILE_APPEND);
     }
 });
-
-// Módosítás dátuma: 2025. december 13. 21:40:00
