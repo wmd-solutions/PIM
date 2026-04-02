@@ -1,61 +1,277 @@
 /**
  * Fájl helye: php/assets/js/script.js
- * Funkció: Kliens oldali interakciók, Sötét mód, QR kód, és az új PDF összefűző vezérlés.
- * Módosítás dátuma: 2026. április 02. 12:15:00
+ * Funkció: Kliens oldali interakciók, Sötét mód, QR kód, és PDF műszerfal vezérlés.
+ * Módosítás dátuma: 2026. április 02. 14:15:00
  */
 
 var pollingInterval = null;
-var selectedPdfFiles = []; // Globális tömb a feltöltendő PDF fájlokhoz
+var currentPdfTool = '';
+
+var pdfFilesMap = {
+    'merge': [],
+    'split': [],
+    'encrypt': [],
+    'rotate': [],
+    'wm_main': [],
+    'wm_stamp': [],
+    'repair': []
+};
 
 $(document).ready(function() {
-    // 0. Téma inicializálása
     initTheme();
 
-    // 1. Keresés
     $('#btnSearch').click(performSearch);
     $('#searchQuery').keypress(function(e) { if(e.which == 13) performSearch(); });
     
-    // 2. Generátor űrlap
     $('#genForm').on('submit', function(e) {
         e.preventDefault();
         startJob();
     });
 
-    // Téma váltó gomb
     $('#themeToggle').click(toggleTheme);
 
-    // 3. PDF Dropzone és fájlkiválasztás események
-    var dropzone = $('#pdfDropzone');
-    var fileInput = $('#pdfFileInput');
-
-    dropzone.on('dragover', function(e) {
+    // --- PDF ESZKÖZTÁR ESEMÉNYEK ---
+    $('.pdf-dropzone').on('dragover', function(e) {
         e.preventDefault();
-        dropzone.addClass('dragover');
+        $(this).addClass('dragover');
     });
 
-    dropzone.on('dragleave', function(e) {
+    $('.pdf-dropzone').on('dragleave', function(e) {
         e.preventDefault();
-        dropzone.removeClass('dragover');
+        $(this).removeClass('dragover');
     });
 
-    dropzone.on('drop', function(e) {
+    $('.pdf-dropzone').on('drop', function(e) {
         e.preventDefault();
-        dropzone.removeClass('dragover');
-        handlePdfFiles(e.originalEvent.dataTransfer.files);
+        $(this).removeClass('dragover');
+        var tool = $(this).data('tool');
+        handlePdfFiles(e.originalEvent.dataTransfer.files, tool);
     });
 
-    dropzone.click(function() {
-        fileInput.click();
+    $('.pdf-dropzone').click(function() {
+        var tool = $(this).data('tool');
+        $('#pdfFileInput_' + tool).click();
     });
 
-    fileInput.change(function() {
-        handlePdfFiles(this.files);
-        // Töröljük a form mezőt, hogy újra ki lehessen választani ugyanazt a fájlt
+    $('input[type="file"][id^="pdfFileInput_"]').change(function() {
+        var tool = $(this).data('tool');
+        handlePdfFiles(this.files, tool);
         $(this).val('');
     });
 });
 
-// --- SÖTÉT MÓD KEZELÉS ---
+// Váltó logika a Szétvágás eszközön belül a ZIP / Kivonás között
+window.toggleSplitMode = function() {
+    if ($('#splitModeExtract').is(':checked')) {
+        $('#pagesInputWrapper').slideDown(200);
+    } else {
+        $('#pagesInputWrapper').slideUp(200);
+        $('#pdfParam_pages').val(''); // Ha ZIP módban van, ürítjük az inputot, a backend automatikusan felismeri
+    }
+}
+
+window.showPdfWorkspace = function(tool) {
+    currentPdfTool = tool;
+    $('#pdfToolMenu').fadeOut(200, function() {
+        $('.pdf-workspace').hide();
+        $('#pdfWs_' + tool).show();
+        
+        let btnText = "Művelet Végrehajtása";
+        if(tool === 'merge') btnText = "Fájlok Összefűzése";
+        if(tool === 'split') btnText = "Szétvágás futtatása";
+        if(tool === 'encrypt') btnText = "PDF Titkosítása";
+        if(tool === 'rotate') btnText = "Oldalak Forgatása";
+        if(tool === 'watermark') btnText = "Vízjel Hozzáadása";
+        if(tool === 'repair') btnText = "PDF Javítása";
+        
+        $('#btnPdfActionText').text(btnText);
+        $('#pdfStatusContainer, #pdfErrorContainer, #pdfResultContainer').hide();
+        
+        checkPdfActionReady(tool);
+        $('#pdfWorkspaces').fadeIn(200);
+    });
+}
+
+window.hidePdfWorkspace = function() {
+    currentPdfTool = '';
+    $('#pdfWorkspaces').fadeOut(200, function() {
+        $('#pdfToolMenu').fadeIn(200);
+    });
+}
+
+function handlePdfFiles(files, tool) {
+    $.each(files, function(i, file) {
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+            if (tool === 'merge') {
+                pdfFilesMap[tool].push(file);
+            } else {
+                pdfFilesMap[tool] = [file];
+            }
+        } else {
+            alert('Csak PDF fájlok tölthetők fel!');
+        }
+    });
+    renderPdfList(tool);
+}
+
+window.removePdfFile = function(tool, index) {
+    pdfFilesMap[tool].splice(index, 1);
+    renderPdfList(tool);
+}
+
+function renderPdfList(tool) {
+    var list = $('#pdfFileList_' + tool);
+    list.empty();
+    var files = pdfFilesMap[tool];
+    
+    if (files.length > 0) {
+        list.show();
+        $.each(files, function(i, file) {
+            var item = $('<div class="list-group-item pdf-file-item"></div>');
+            var nameSpan = $('<span><i class="fas fa-file-pdf text-danger me-2"></i>' + file.name + '</span>');
+            var delBtn = $('<button class="btn btn-sm btn-outline-danger border-0"><i class="fas fa-times"></i></button>');
+            
+            delBtn.click(function(e) {
+                e.stopPropagation();
+                removePdfFile(tool, i);
+            });
+            
+            item.append(nameSpan).append(delBtn);
+            list.append(item);
+        });
+    } else {
+        list.hide();
+    }
+    checkPdfActionReady(tool);
+}
+
+function checkPdfActionReady(tool) {
+    var isReady = false;
+    if (tool === 'merge') {
+        isReady = pdfFilesMap[tool].length >= 2;
+    } else if (tool === 'watermark') {
+        if (currentPdfTool === 'watermark') {
+            isReady = pdfFilesMap['wm_main'].length === 1 && pdfFilesMap['wm_stamp'].length === 1;
+        }
+    } else {
+        isReady = pdfFilesMap[tool].length === 1;
+    }
+    $('#btnPdfAction').prop('disabled', !isReady);
+}
+
+window.executePdfAction = function() {
+    var tool = currentPdfTool;
+    if (!tool) return;
+
+    $('#pdfErrorContainer, #pdfResultContainer').hide();
+    $('#pdfStatusContainer').show();
+    $('#pdfStatusText').text(LANG.pdf_uploading || 'Fájlok feltöltése...');
+    $('#pdfProgressBar').css('width', '0%');
+    $('#btnPdfAction').prop('disabled', true);
+
+    withRecaptcha('pdf_' + tool, function(token) {
+        var formData = new FormData();
+        
+        formData.append('action', 'pdf_tool'); 
+        formData.append('tool_type', tool);
+        formData.append('g_recaptcha_response', token);
+        
+        if (tool === 'watermark') {
+            formData.append('pdf_main', pdfFilesMap['wm_main'][0]);
+            formData.append('pdf_stamp', pdfFilesMap['wm_stamp'][0]);
+        } else {
+            $.each(pdfFilesMap[tool], function(i, file) {
+                formData.append('pdf_files[]', file);
+            });
+        }
+        
+        if (tool === 'split') formData.append('pages', $('#pdfParam_pages').val());
+        if (tool === 'encrypt') formData.append('password', $('#pdfParam_password').val());
+        if (tool === 'rotate') formData.append('rotation', $('#pdfParam_rotation').val());
+
+        $.ajax({
+            type: 'POST',
+            url: 'index.php',
+            data: formData,
+            processData: false,
+            contentType: false,
+            xhr: function() {
+                var xhr = new window.XMLHttpRequest();
+                xhr.upload.addEventListener("progress", function(evt) {
+                    if (evt.lengthComputable) {
+                        var percentComplete = Math.round((evt.loaded / evt.total) * 100);
+                        var displayPercent = Math.min(percentComplete, 50); 
+                        $('#pdfProgressBar').css('width', displayPercent + '%');
+                    }
+                }, false);
+                return xhr;
+            },
+            success: function(response) {
+                if (response.status === 'started' && response.job_id) {
+                    $('#pdfProgressBar').css('width', '50%');
+                    $('#pdfStatusText').text('Feldolgozás (pdftk)...');
+                    pollPdfStatus(response.job_id, tool);
+                } else {
+                    showPdfError(response.message || 'Hiba a feladat indításakor.', tool);
+                }
+            },
+            error: function(xhr) {
+                showPdfError('Hálózati hiba a feltöltés során.', tool);
+            }
+        });
+    });
+}
+
+function pollPdfStatus(jobId, tool) {
+    var localPollingInterval = setInterval(function() {
+        $.ajax({
+            type: 'POST',
+            url: 'index.php',
+            data: { action: 'check_status', job_id: jobId },
+            dataType: 'json',
+            success: function(job) {
+                var currentWidth = parseInt($('#pdfProgressBar')[0].style.width) || 50;
+                if (currentWidth < 90) $('#pdfProgressBar').css('width', (currentWidth + 5) + '%');
+
+                if (job.status === 'completed') {
+                    clearInterval(localPollingInterval);
+                    $('#pdfProgressBar').css('width', '100%');
+                    setTimeout(function() { showPdfResult(job, tool); }, 500);
+                } else if (job.status === 'error') {
+                    clearInterval(localPollingInterval);
+                    showPdfError(job.message, tool);
+                }
+            },
+            error: function() { }
+        });
+    }, 2000);
+}
+
+function showPdfResult(job, tool) {
+    $('#pdfStatusContainer').hide();
+    $('#pdfResultFileName').text(job.download_name);
+    var downloadLink = 'index.php?action=download&file=' + encodeURIComponent(job.result_file) + '&name=' + encodeURIComponent(job.download_name);
+    $('#pdfDownloadBtn').attr('href', downloadLink);
+    $('#pdfResultContainer').show();
+    
+    if (tool === 'watermark') {
+        pdfFilesMap['wm_main'] = [];
+        pdfFilesMap['wm_stamp'] = [];
+        renderPdfList('wm_main');
+        renderPdfList('wm_stamp');
+    } else {
+        pdfFilesMap[tool] = [];
+        renderPdfList(tool);
+    }
+}
+
+function showPdfError(msg, tool) {
+    $('#pdfStatusContainer').hide();
+    checkPdfActionReady(tool); 
+    $('#pdfErrorText').text(msg);
+    $('#pdfErrorContainer').show();
+}
+
 function initTheme() {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark') {
@@ -81,8 +297,6 @@ function toggleTheme() {
     }
 }
 
-// --- FOLYAMATOK ---
-
 function withRecaptcha(actionName, callback) {
     grecaptcha.ready(function() {
         grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: actionName}).then(function(token) {
@@ -103,13 +317,7 @@ function startJob() {
     var useDyslexic = $('#use_opendyslexic').is(':checked');
 
     withRecaptcha('generate', function(token) {
-        var formData = {
-            action: 'generate',
-            reader_url: readerUrl,
-            format: format,
-            use_opendyslexic: useDyslexic,
-            g_recaptcha_response: token
-        };
+        var formData = { action: 'generate', reader_url: readerUrl, format: format, use_opendyslexic: useDyslexic, g_recaptcha_response: token };
 
         $.ajax({
             type: 'POST',
@@ -119,20 +327,14 @@ function startJob() {
             success: function(response) {
                 if (response.status === 'ready') {
                     $('#statusContainer').hide();
-                    showResult({
-                        download_name: response.download_name,
-                        direct_url: response.download_url
-                    });
+                    showResult({ download_name: response.download_name, direct_url: response.download_url });
                 } else if (response.status === 'started' && response.job_id) {
                     pollStatus(response.job_id);
                 } else {
                     showError(response.message || 'Hiba a feladat indításakor.');
                 }
             },
-            error: function(xhr) {
-                console.error(xhr);
-                showError('Hálózati hiba a kérés indításakor.');
-            }
+            error: function() { showError('Hálózati hiba a kérés indításakor.'); }
         });
     });
 }
@@ -161,21 +363,10 @@ function pollStatus(jobId) {
 function showResult(job) {
     $('#statusContainer').hide();
     $('#submitBtn').prop('disabled', false);
-    
     $('#resultFileName').text(job.download_name);
     
-    var downloadLink;
-    if (job.direct_url) {
-        downloadLink = job.direct_url;
-    } else {
-        downloadLink = 'index.php?action=download&file=' + encodeURIComponent(job.result_file) + '&name=' + encodeURIComponent(job.download_name);
-    }
-    
-    var fullUrl = downloadLink;
-    if (downloadLink.indexOf('http') !== 0) {
-        var path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-        fullUrl = window.location.origin + path + downloadLink;
-    }
+    var downloadLink = job.direct_url ? job.direct_url : 'index.php?action=download&file=' + encodeURIComponent(job.result_file) + '&name=' + encodeURIComponent(job.download_name);
+    var fullUrl = downloadLink.indexOf('http') !== 0 ? window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1) + downloadLink : downloadLink;
 
     $('#downloadBtn').attr('href', downloadLink);
     generateQRCode(fullUrl);
@@ -184,14 +375,7 @@ function showResult(job) {
 
 function generateQRCode(url) {
     $('#qrCodeContainer').empty();
-    new QRCode(document.getElementById("qrCodeContainer"), {
-        text: url,
-        width: 128,
-        height: 128,
-        colorDark : "#000000",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.L
-    });
+    new QRCode(document.getElementById("qrCodeContainer"), { text: url, width: 128, height: 128, colorDark : "#000000", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.L });
 }
 
 function showError(msg) {
@@ -211,14 +395,7 @@ function performSearch() {
 
     withRecaptcha('search', function(token) {
         $.ajax({
-            type: "POST",
-            url: "index.php",
-            data: { 
-                action: "search", 
-                query: query,
-                g_recaptcha_response: token 
-            },
-            dataType: "json",
+            type: "POST", url: "index.php", data: { action: "search", query: query, g_recaptcha_response: token }, dataType: "json",
             success: function(response) {
                 $('#searchLoader').hide();
                 $('#searchResults').show();
@@ -247,7 +424,7 @@ function performSearch() {
     });
 }
 
-function selectBook(url) {
+window.selectBook = function(url) {
     var triggerEl = document.querySelector('#appTabs a[href="#generator"]');
     var tab = new bootstrap.Tab(triggerEl);
     tab.show();
@@ -259,11 +436,10 @@ function selectBook(url) {
     }
 }
 
-function copyText(elementId, btnElement) {
+window.copyText = function(elementId, btnElement) {
     var element = document.getElementById(elementId);
     if (!element) return;
-    var text = element.innerText;
-    navigator.clipboard.writeText(text).then(function() {
+    navigator.clipboard.writeText(element.innerText).then(function() {
         if(btnElement) {
             var icon = btnElement.querySelector('i');
             var originalClass = icon ? icon.className : '';
@@ -271,152 +447,4 @@ function copyText(elementId, btnElement) {
             setTimeout(function() { if(icon) icon.className = originalClass; }, 2000);
         }
     });
-}
-
-// --- ÚJ: PDF FÁJL KEZELÉS ---
-
-function handlePdfFiles(files) {
-    $.each(files, function(i, file) {
-        // Ellenőrzés: csak PDF mehet be
-        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-            selectedPdfFiles.push(file);
-        }
-    });
-    renderPdfList();
-}
-
-function removePdfFile(index) {
-    selectedPdfFiles.splice(index, 1);
-    renderPdfList();
-}
-
-function renderPdfList() {
-    var list = $('#pdfFileList');
-    list.empty();
-    
-    if (selectedPdfFiles.length > 0) {
-        list.show();
-        $.each(selectedPdfFiles, function(i, file) {
-            var item = $('<div class="list-group-item pdf-file-item"></div>');
-            var nameSpan = $('<span><i class="fas fa-file-pdf text-danger me-2"></i>' + file.name + '</span>');
-            var delBtn = $('<button class="btn btn-sm btn-outline-danger border-0"><i class="fas fa-times"></i></button>');
-            
-            delBtn.click(function(e) {
-                e.stopPropagation();
-                removePdfFile(i);
-            });
-            
-            item.append(nameSpan).append(delBtn);
-            list.append(item);
-        });
-    } else {
-        list.hide();
-    }
-    
-    // Gomb engedélyezése ha van legalább 2 fájl
-    $('#btnPdfMerge').prop('disabled', selectedPdfFiles.length < 2);
-}
-
-function startPdfMerge() {
-    if (selectedPdfFiles.length < 2) return;
-
-    $('#pdfErrorContainer, #pdfResultContainer').hide();
-    $('#pdfStatusContainer').show();
-    $('#pdfStatusText').text(LANG.pdf_uploading || 'Fájlok feltöltése...');
-    $('#pdfProgressBar').css('width', '0%');
-    $('#btnPdfMerge').prop('disabled', true);
-
-    withRecaptcha('pdf_merge', function(token) {
-        var formData = new FormData();
-        formData.append('action', 'pdf_merge');
-        formData.append('g_recaptcha_response', token);
-        
-        $.each(selectedPdfFiles, function(i, file) {
-            formData.append('pdf_files[]', file);
-        });
-
-        $.ajax({
-            type: 'POST',
-            url: 'index.php',
-            data: formData,
-            processData: false, // Fontos fájlfeltöltésnél
-            contentType: false, // Fontos fájlfeltöltésnél
-            xhr: function() {
-                var xhr = new window.XMLHttpRequest();
-                xhr.upload.addEventListener("progress", function(evt) {
-                    if (evt.lengthComputable) {
-                        var percentComplete = Math.round((evt.loaded / evt.total) * 100);
-                        // A progress bar 0-50% között jelzi a feltöltést (szerver feldolgozás kapja a többit)
-                        var displayPercent = Math.min(percentComplete, 50); 
-                        $('#pdfProgressBar').css('width', displayPercent + '%');
-                    }
-                }, false);
-                return xhr;
-            },
-            success: function(response) {
-                if (response.status === 'started' && response.job_id) {
-                    $('#pdfProgressBar').css('width', '50%');
-                    $('#pdfStatusText').text(LANG.processing || 'Feldolgozás és összefűzés...');
-                    pollPdfStatus(response.job_id);
-                } else {
-                    showPdfError(response.message || 'Hiba a feladat indításakor.');
-                }
-            },
-            error: function(xhr) {
-                console.error(xhr);
-                showPdfError('Hálózati hiba a feltöltés során.');
-            }
-        });
-    });
-}
-
-function pollPdfStatus(jobId) {
-    var localPollingInterval = setInterval(function() {
-        $.ajax({
-            type: 'POST',
-            url: 'index.php',
-            data: { action: 'check_status', job_id: jobId },
-            dataType: 'json',
-            success: function(job) {
-                // Polling alatt vizuális haladás (50-től 90%-ig araszol)
-                var currentWidth = parseInt($('#pdfProgressBar')[0].style.width) || 50;
-                if (currentWidth < 90) {
-                    $('#pdfProgressBar').css('width', (currentWidth + 5) + '%');
-                }
-
-                if (job.status === 'completed') {
-                    clearInterval(localPollingInterval);
-                    $('#pdfProgressBar').css('width', '100%');
-                    setTimeout(function() {
-                        showPdfResult(job);
-                    }, 500);
-                } else if (job.status === 'error') {
-                    clearInterval(localPollingInterval);
-                    showPdfError(job.message);
-                }
-            },
-            error: function() { }
-        });
-    }, 2000);
-}
-
-function showPdfResult(job) {
-    $('#pdfStatusContainer').hide();
-    
-    $('#pdfResultFileName').text(job.download_name);
-    var downloadLink = 'index.php?action=download&file=' + encodeURIComponent(job.result_file) + '&name=' + encodeURIComponent(job.download_name);
-    
-    $('#pdfDownloadBtn').attr('href', downloadLink);
-    $('#pdfResultContainer').show();
-    
-    // Lista ürítése a sikeres generálás után
-    selectedPdfFiles = [];
-    renderPdfList();
-}
-
-function showPdfError(msg) {
-    $('#pdfStatusContainer').hide();
-    $('#btnPdfMerge').prop('disabled', selectedPdfFiles.length < 2);
-    $('#pdfErrorText').text(msg);
-    $('#pdfErrorContainer').show();
 }

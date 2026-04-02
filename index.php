@@ -3,14 +3,14 @@ declare(strict_types=1);
 /**
  * Fájl helye: php/index.php
  * Funkció: Belépési pont (Gateway), routing, autoloader és kivételkezelés.
- * Módosítás dátuma: 2026. április 02. 12:20:00
+ * Módosítás dátuma: 2026. április 02. 14:00:00
  */
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/includes/logger.php';
-require_once __DIR__ . '/includes/search.php'; // A meglévő procedurális függvény miatt
+require_once __DIR__ . '/includes/search.php';
 
-// 1. Dinamikus Autoloader (Snake_case fájlnév alapú osztálybetöltés)
+// 1. Dinamikus Autoloader
 spl_autoload_register(function (string $className) {
     $snakeCase = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className));
     $directories = ['/handlers/', '/services/', '/includes/'];
@@ -40,9 +40,11 @@ set_exception_handler(function (\Throwable $e) {
     exit;
 });
 
-// 3. Automatikus karbantartás indítása (5% eséllyel)
+// 3. Automatikus karbantartás
 if (rand(1, 100) <= 5) {
-    GarbageCollector::cleanUp();
+    if(class_exists('GarbageCollector')) {
+        GarbageCollector::cleanUp();
+    }
 }
 
 // 4. API Kérések Irányítása (Routing)
@@ -53,6 +55,7 @@ if ($action !== null) {
     if ($method === 'GET' && $action === 'download') {
         (new DownloadHandler())->handle();
     } elseif ($method === 'POST') {
+        
         switch ($action) {
             case 'check_status':
                 (new StatusHandler())->handle();
@@ -60,21 +63,22 @@ if ($action !== null) {
             case 'search':
                 (new SearchHandler())->handle();
                 break;
-            case 'pdf_merge':
-                (new PdfMergeHandler())->handle();
-                break;
             case 'generate':
                 (new GenerateHandler())->handle();
+                break;
+            // AZ ÖSSZES PDF MŰVELET KÖZÖS VÉGPONTJA
+            case 'pdf_tool':
+                (new PdfToolHandler())->handle();
                 break;
             default:
                 http_response_code(400);
                 header('Content-Type: application/json');
-                echo json_encode(['status' => 'error', 'message' => 'Érvénytelen művelet.']);
+                echo json_encode(['status' => 'error', 'message' => 'Érvénytelen művelet: ' . htmlspecialchars((string)$action)]);
                 break;
         }
     }
-    exit; // API kérés kiszolgálása után azonnali kilépés, hogy ne renderelődjön a HTML
+    exit;
 }
 
-// 5. Frontend nézet betöltése (Alapértelmezett GET kérés esetén)
+// 5. Frontend nézet betöltése
 require_once __DIR__ . '/views/home.php';
