@@ -2,8 +2,8 @@
 declare(strict_types=1);
 /**
  * Fájl helye: php/views/home.php
- * Funkció: A fő HTML felület és kliensoldali struktúra.
- * Módosítás dátuma: 2026. április 02. 14:15:00
+ * Funkció: A fő HTML felület és kliensoldali struktúra (Biztonsági szövegekkel).
+ * Módosítás dátuma: 2026. április 07. 16:00:00
  */
 if (!defined('BASE_PATH')) {
     exit('No direct script access allowed');
@@ -49,7 +49,6 @@ global $lang;
 
                 <div class="card-body p-4">
                     <div class="tab-content">
-                        <!-- 1. KERESÉS -->
                         <div class="tab-pane fade show active" id="search">
                             <div class="input-group input-group-lg mb-3">
                                 <input type="text" class="form-control" id="searchQuery" placeholder="<?php echo $lang['search_placeholder']; ?>">
@@ -59,7 +58,6 @@ global $lang;
                             <div id="searchResults" class="mt-4"><div class="text-center text-muted py-4"><i class="fas fa-arrow-up me-2"></i><?php echo $lang['search_no_input']; ?></div></div>
                         </div>
 
-                        <!-- 2. GENERÁTOR -->
                         <div class="tab-pane fade" id="generator">
                             <div class="alert alert-info mb-4 border-info">
                                 <h5 class="alert-heading h6 fw-bold"><i class="fas fa-info-circle me-2"></i><?php echo $lang['gen_manual_title']; ?></h5>
@@ -109,15 +107,23 @@ global $lang;
                                 <div class="filename-box d-flex justify-content-between align-items-center mb-3">
                                     <span id="resultFileName"></span><button class="btn btn-sm btn-outline-warning text-dark border-0" onclick="copyText('resultFileName', this)"><i class="far fa-copy fa-lg"></i></button>
                                 </div>
-                                <div class="d-grid gap-2"><a href="#" id="downloadBtn" class="btn btn-success w-100 py-2"><i class="fas fa-download me-2"></i><?php echo $lang['btn_download']; ?></a></div>
-                                <div class="text-center mt-4"><label class="form-label fw-bold small text-uppercase text-muted"><?php echo $lang['res_qr_label']; ?></label><div id="qrCodeContainer"></div></div>
+                                
+                                <div class="d-grid gap-2">
+                                    <a href="#" id="downloadBtn" class="btn btn-success w-100 py-2"><i class="fas fa-download me-2"></i><?php echo $lang['btn_download']; ?></a>
+                                </div>
+                                
+                                <div class="text-danger text-center small mt-2 fw-bold" id="generatorSecurityWarning" style="display:none;">
+                                    <i class="fas fa-user-shield me-1"></i> Biztonsági védelem: A fájl az első letöltés után azonnal törlődik a szerverről!
+                                </div>
+
+                                <div class="text-center mt-4" id="qrCodeWrapper">
+                                    <label class="form-label fw-bold small text-uppercase text-muted"><?php echo $lang['res_qr_label']; ?></label>
+                                    <div id="qrCodeContainer"></div>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- 3. PDF ESZKÖZÖK MŰSZERFAL -->
                         <div class="tab-pane fade" id="pdf">
-                            
-                            <!-- A) Eszköztár Menü -->
                             <div id="pdfToolMenu">
                                 <div class="alert alert-info mb-4 border-info">
                                     <h5 class="alert-heading h6 fw-bold"><i class="fas fa-toolbox me-2"></i>PDF Eszköztár</h5>
@@ -134,13 +140,11 @@ global $lang;
                                 </div>
                             </div>
 
-                            <!-- B) Munkaterületek -->
                             <div id="pdfWorkspaces" style="display:none;">
                                 <button class="btn btn-sm btn-outline-secondary mb-4" onclick="hidePdfWorkspace()">
                                     <i class="fas fa-arrow-left me-1"></i> Vissza az eszköztárhoz
                                 </button>
 
-                                <!-- 1. Összefűzés -->
                                 <div id="pdfWs_merge" class="pdf-workspace" style="display:none;">
                                     <h4 class="mb-3 text-primary"><i class="fas fa-object-group me-2"></i>PDF Összefűzés</h4>
                                     <div class="pdf-dropzone p-4 text-center border rounded bg-light mb-3" data-tool="merge">
@@ -150,7 +154,6 @@ global $lang;
                                     <div id="pdfFileList_merge" class="list-group mb-3" style="display:none;"></div>
                                 </div>
 
-                                <!-- 2. Szétvágás (ÚJ RÁDIÓGOMBOS VÁLASZTÓ) -->
                                 <div id="pdfWs_split" class="pdf-workspace" style="display:none;">
                                     <h4 class="mb-3 text-danger"><i class="fas fa-cut me-2"></i>PDF Szétvágás / Kivonás</h4>
                                     <div class="pdf-dropzone p-4 text-center border rounded bg-light mb-3" data-tool="split">
@@ -181,7 +184,6 @@ global $lang;
                                     </div>
                                 </div>
 
-                                <!-- 3. Titkosítás -->
                                 <div id="pdfWs_encrypt" class="pdf-workspace" style="display:none;">
                                     <h4 class="mb-3 text-warning"><i class="fas fa-lock me-2"></i>PDF Titkosítás</h4>
                                     <div class="pdf-dropzone p-4 text-center border rounded bg-light mb-3" data-tool="encrypt">
@@ -192,7 +194,6 @@ global $lang;
                                     <div class="mb-3"><label class="form-label fw-bold">Jelszó a megnyitáshoz:</label><input type="text" class="form-control" id="pdfParam_password" placeholder="Add meg a jelszót..."></div>
                                 </div>
 
-                                <!-- 4. Forgatás -->
                                 <div id="pdfWs_rotate" class="pdf-workspace" style="display:none;">
                                     <h4 class="mb-3 text-success"><i class="fas fa-sync me-2"></i>PDF Forgatás</h4>
                                     <div class="pdf-dropzone p-4 text-center border rounded bg-light mb-3" data-tool="rotate">
@@ -210,7 +211,6 @@ global $lang;
                                     </div>
                                 </div>
 
-                                <!-- 5. Vízjelezés -->
                                 <div id="pdfWs_watermark" class="pdf-workspace" style="display:none;">
                                     <h4 class="mb-3 text-info"><i class="fas fa-stamp me-2"></i>PDF Vízjelezés</h4>
                                     <label class="form-label fw-bold">1. Fő Dokumentum:</label>
@@ -228,7 +228,6 @@ global $lang;
                                     <div id="pdfFileList_wm_stamp" class="list-group mb-3" style="display:none;"></div>
                                 </div>
 
-                                <!-- 6. Javítás -->
                                 <div id="pdfWs_repair" class="pdf-workspace" style="display:none;">
                                     <h4 class="mb-3 text-secondary"><i class="fas fa-wrench me-2"></i>PDF Javítás</h4>
                                     <div class="pdf-dropzone p-4 text-center border rounded bg-light mb-3" data-tool="repair">
@@ -238,14 +237,12 @@ global $lang;
                                     <div id="pdfFileList_repair" class="list-group mb-3" style="display:none;"></div>
                                 </div>
 
-                                <!-- KÖZÖS VÉGREHAJTÓ GOMB -->
                                 <div class="d-grid mt-4">
                                     <button type="button" class="btn btn-primary btn-lg" id="btnPdfAction" disabled onclick="executePdfAction()">
                                         <i class="fas fa-play me-2"></i><span id="btnPdfActionText">Művelet Végrehajtása</span>
                                     </button>
                                 </div>
 
-                                <!-- KÖZÖS Állapotjelzők és Eredmények -->
                                 <div class="mt-4" id="pdfStatusContainer" style="display:none;">
                                     <div class="d-flex align-items-center justify-content-center text-primary mb-2"><div class="spinner-border me-3" role="status"></div><span id="pdfStatusText">Feldolgozás...</span></div>
                                     <div class="progress"><div class="progress-bar progress-bar-striped progress-bar-animated" id="pdfProgressBar" role="progressbar" style="width: 0%"></div></div>
@@ -258,6 +255,10 @@ global $lang;
                                         <span id="pdfResultFileName"></span><button class="btn btn-sm btn-outline-warning text-dark border-0" onclick="copyText('pdfResultFileName', this)"><i class="far fa-copy fa-lg"></i></button>
                                     </div>
                                     <div class="d-grid gap-2"><a href="#" id="pdfDownloadBtn" class="btn btn-success w-100 py-2"><i class="fas fa-download me-2"></i>Letöltés</a></div>
+                                    
+                                    <div class="text-danger text-center small mt-2 fw-bold">
+                                        <i class="fas fa-user-shield me-1"></i> Biztonsági védelem: A fájl az első letöltés után azonnal törlődik a szerverről!
+                                    </div>
                                 </div>
 
                             </div>

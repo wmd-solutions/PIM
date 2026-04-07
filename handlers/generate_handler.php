@@ -2,15 +2,12 @@
 declare(strict_types=1);
 /**
  * Fájl helye: php/handlers/generate_handler.php
- * Funkció: E-könyv forrás URL fogadása és a konvertáló Job elindítása.
- * Módosítás dátuma: 2026. április 02. 12:20:00
+ * Funkció: E-könyv forrás URL fogadása és konvertáló Job indítása biztonsági tokennel.
+ * Módosítás dátuma: 2026. április 07. 16:00:00
  */
 
 class GenerateHandler {
     
-    /**
-     * @return void
-     */
     public function handle(): void {
         header('Content-Type: application/json');
         global $lang;
@@ -46,6 +43,7 @@ class GenerateHandler {
                 $filenameBase .= "_dyslexic";
             }
 
+            // Direkt (helyi fájlt nem generáló) PIM link esetén nincs token, mert ez egy nyilvános külső link
             if ($requestedFormat === 'epub' && !$useDyslexic) {
                 echo json_encode([
                     'status' => 'ready', 
@@ -57,11 +55,15 @@ class GenerateHandler {
             }
 
             $jobId = uniqid('job_');
+            $downloadToken = bin2hex(random_bytes(32)); // ÚJ: Biztonsági token
+
             $jobData = [
                 'id' => $jobId,
                 'type' => 'ebook_convert',
                 'status' => 'pending', 
                 'created_at' => time(),
+                'session_id' => session_id(), // ÚJ: Session mentése
+                'download_token' => $downloadToken, // ÚJ: Token mentése
                 'url' => $directUrl,
                 'format' => $requestedFormat,
                 'filename_base' => $filenameBase,

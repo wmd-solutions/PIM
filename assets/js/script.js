@@ -1,7 +1,7 @@
 /**
  * Fájl helye: php/assets/js/script.js
- * Funkció: Kliens oldali interakciók, Sötét mód, QR kód, és PDF műszerfal vezérlés.
- * Módosítás dátuma: 2026. április 02. 14:15:00
+ * Funkció: Kliens interakciók, Sötét mód, QR kód, PDF vezérlés és biztonsági letöltések.
+ * Módosítás dátuma: 2026. április 07. 16:45:00
  */
 
 var pollingInterval = null;
@@ -29,6 +29,23 @@ $(document).ready(function() {
     });
 
     $('#themeToggle').click(toggleTheme);
+
+    // --- BIZTONSÁGI LETÖLTÉS GOMB VIZUÁLIS TILTÁSA KATTINTÁS UTÁN ---
+    $(document).on('click', '#downloadBtn, #pdfDownloadBtn', function() {
+        var btn = $(this);
+        var href = btn.attr('href');
+        
+        // Csak a saját, biztonságos letöltési linkeknél alkalmazzuk a letiltást
+        if (href && href.indexOf('action=download') !== -1) {
+            // Várunk 1 másodpercet, hogy a böngésző letöltése biztosan elinduljon
+            setTimeout(function() {
+                btn.removeClass('btn-success').addClass('btn-secondary disabled');
+                btn.html('<i class="fas fa-check-double me-2"></i>Letöltve (Törölve a szerverről)');
+                // Megakadályozzuk a további kattintásokat
+                btn.css('pointer-events', 'none');
+            }, 1000);
+        }
+    });
 
     // --- PDF ESZKÖZTÁR ESEMÉNYEK ---
     $('.pdf-dropzone').on('dragover', function(e) {
@@ -60,13 +77,12 @@ $(document).ready(function() {
     });
 });
 
-// Váltó logika a Szétvágás eszközön belül a ZIP / Kivonás között
 window.toggleSplitMode = function() {
     if ($('#splitModeExtract').is(':checked')) {
         $('#pagesInputWrapper').slideDown(200);
     } else {
         $('#pagesInputWrapper').slideUp(200);
-        $('#pdfParam_pages').val(''); // Ha ZIP módban van, ürítjük az inputot, a backend automatikusan felismeri
+        $('#pdfParam_pages').val(''); 
     }
 }
 
@@ -169,7 +185,7 @@ window.executePdfAction = function() {
     $('#pdfProgressBar').css('width', '0%');
     $('#btnPdfAction').prop('disabled', true);
 
-    withRecaptcha('pdf_' + tool, function(token) {
+    withRecaptcha('pdf_tool', function(token) {
         var formData = new FormData();
         
         formData.append('action', 'pdf_tool'); 
@@ -250,8 +266,17 @@ function pollPdfStatus(jobId, tool) {
 function showPdfResult(job, tool) {
     $('#pdfStatusContainer').hide();
     $('#pdfResultFileName').text(job.download_name);
-    var downloadLink = 'index.php?action=download&file=' + encodeURIComponent(job.result_file) + '&name=' + encodeURIComponent(job.download_name);
-    $('#pdfDownloadBtn').attr('href', downloadLink);
+    
+    var downloadLink = 'index.php?action=download&job_id=' + encodeURIComponent(job.id) + '&token=' + encodeURIComponent(job.download_token);
+    
+    // Gomb állapotának és feliratának alaphelyzetbe állítása új feladat esetén
+    $('#pdfDownloadBtn')
+        .removeClass('btn-secondary disabled')
+        .addClass('btn-success')
+        .css('pointer-events', 'auto')
+        .attr('href', downloadLink)
+        .html('<i class="fas fa-download me-2"></i>Letöltés');
+
     $('#pdfResultContainer').show();
     
     if (tool === 'watermark') {
@@ -365,11 +390,30 @@ function showResult(job) {
     $('#submitBtn').prop('disabled', false);
     $('#resultFileName').text(job.download_name);
     
-    var downloadLink = job.direct_url ? job.direct_url : 'index.php?action=download&file=' + encodeURIComponent(job.result_file) + '&name=' + encodeURIComponent(job.download_name);
-    var fullUrl = downloadLink.indexOf('http') !== 0 ? window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1) + downloadLink : downloadLink;
+    var downloadLink;
+    if (job.direct_url) {
+        // Nyilvános PIM link: nincs Session védelem
+        downloadLink = job.direct_url;
+        $('#generatorSecurityWarning').hide();
+        $('#qrCodeWrapper').show();
+        
+        var fullUrl = downloadLink.indexOf('http') !== 0 ? window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1) + downloadLink : downloadLink;
+        generateQRCode(fullUrl);
+    } else {
+        // Helyi szerver link: Session + Token védelemmel
+        downloadLink = 'index.php?action=download&job_id=' + encodeURIComponent(job.id) + '&token=' + encodeURIComponent(job.download_token);
+        $('#generatorSecurityWarning').show();
+        $('#qrCodeWrapper').hide(); 
+    }
 
-    $('#downloadBtn').attr('href', downloadLink);
-    generateQRCode(fullUrl);
+    // Gomb állapotának alaphelyzetbe állítása az esetleges korábbi inaktiválás után
+    $('#downloadBtn')
+        .removeClass('btn-secondary disabled')
+        .addClass('btn-success')
+        .css('pointer-events', 'auto')
+        .attr('href', downloadLink)
+        .html('<i class="fas fa-download me-2"></i>' + (LANG.btn_download || 'Letöltés'));
+
     $('#resultContainer').show();
 }
 

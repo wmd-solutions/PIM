@@ -2,8 +2,8 @@
 declare(strict_types=1);
 /**
  * Fájl helye: php/handlers/pdf_tool_handler.php
- * Funkció: Az összes PDF eszköz feltöltésének fogadása és a Worker indítása.
- * Módosítás dátuma: 2026. április 02. 14:00:00
+ * Funkció: PDF eszközök fogadása, validációja és biztonsági token generálása.
+ * Módosítás dátuma: 2026. április 07. 16:00:00
  */
 
 class PdfToolHandler {
@@ -27,7 +27,6 @@ class PdfToolHandler {
 
         $uploadedPaths = [];
 
-        // 1. Fájlok fogadása eszközspecifikusan
         try {
             if ($toolType === 'watermark') {
                 $uploadedPaths = $this->handleWatermarkUploads();
@@ -40,20 +39,21 @@ class PdfToolHandler {
             return;
         }
 
-        // 2. Kiterjesztés meghatározása (Szétvágás esetén, ha nincs oldalszám, akkor ZIP lesz)
         $pagesParam = trim($_POST['pages'] ?? '');
         $extension = ($toolType === 'split' && empty($pagesParam)) ? 'zip' : 'pdf';
         
         $jobId = uniqid('job_');
         $baseName = 'Document_' . ucfirst($toolType) . '_' . date('Ymd_His');
+        $downloadToken = bin2hex(random_bytes(32)); // ÚJ: Biztonsági token
         
-        // 3. Job adatainak összeállítása
         $jobData = [
             'id' => $jobId,
             'type' => 'pdf_tool',
             'tool_type' => $toolType,
             'status' => 'pending', 
             'created_at' => time(),
+            'session_id' => session_id(), // ÚJ: Munkamenet azonosító rögzítése
+            'download_token' => $downloadToken, // ÚJ: Token rögzítése
             'input_files' => $uploadedPaths,
             'filename_base' => $baseName,
             'download_name' => $baseName . '.' . $extension,
@@ -66,7 +66,6 @@ class PdfToolHandler {
         
         file_put_contents(JOBS_PATH . '/' . $jobId . '.json', json_encode($jobData));
 
-        // 4. Háttérfolyamat indítása
         $scriptPath = BASE_PATH . '/worker.php';
         $cmd = PHP_BIN . " " . escapeshellarg($scriptPath) . " " . escapeshellarg($jobId) . " > /dev/null 2>&1 &";
         
