@@ -1,7 +1,7 @@
 /**
  * Fájl helye: php/assets/js/script.js
- * Funkció: Kliens interakciók, Sötét mód, QR kód, PDF vezérlés és biztonsági letöltések.
- * Módosítás dátuma: 2026. április 07. 16:45:00
+ * Funkció: Kliens interakciók, Sötét mód, QR kód, PDF vezérlés, biztonsági letöltések és csoportos részfeltöltés.
+ * Módosítás dátuma: 2026. június 02. 11:45:00
  */
 
 var pollingInterval = null;
@@ -116,10 +116,16 @@ window.hidePdfWorkspace = function() {
 }
 
 function handlePdfFiles(files, tool) {
+    var limitExceeded = false;
+    
     $.each(files, function(i, file) {
         if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
             if (tool === 'merge') {
-                pdfFilesMap[tool].push(file);
+                if (pdfFilesMap[tool].length < 300) {
+                    pdfFilesMap[tool].push(file);
+                } else {
+                    limitExceeded = true;
+                }
             } else {
                 pdfFilesMap[tool] = [file];
             }
@@ -127,6 +133,11 @@ function handlePdfFiles(files, tool) {
             alert('Csak PDF fájlok tölthetők fel!');
         }
     });
+
+    if (limitExceeded) {
+        showPdfError('Biztonsági figyelmeztetés: Legfeljebb 300 fájl fűzhető össze egyszerre! A listát a maximális 300 elemre korlátoztuk.', 'merge');
+    }
+    
     renderPdfList(tool);
 }
 
@@ -185,9 +196,107 @@ window.executePdfAction = function() {
     $('#pdfProgressBar').css('width', '0%');
     $('#btnPdfAction').prop('disabled', true);
 
+    // --- CSOPORTOS RÉSZFELTÖLTÉS (CHUNKED MERGE) ---
+    if (tool === 'merge') {
+        var filesToUpload = pdfFilesMap['merge'];
+        
+        if (filesToUpload.length > 300) {
+            showPdfError('Egyszerre legfeljebb 300 fájl fűzhető össze! Kérlek, csökkentsd a fájlok számát.', 'merge');
+            return;
+        }
+
+        var chunks = [];
+        var chunkSize = 15; // Biztonságos csoportok (max_file_uploads limit megkerüléséhez)
+        for (var i = 0; i < filesToUpload.length; i += chunkSize) {
+            chunks.push(filesToUpload.slice(i, i + chunkSize));
+        }
+
+        var uploadedFiles = [];
+        var currentChunkIndex = 0;
+
+        function uploadNextChunk() {
+            if (currentChunkIndex < chunks.length) {
+                var chunk = chunks[currentChunkIndex];
+                
+                var chunkProgressStart = (currentChunkIndex / chunks.length) * 65;
+                $('#pdfProgressBar').css('width', chunkProgressStart + '%');
+                $('#pdfStatusText').text('Fájlok feltöltése: ' + (currentChunkIndex + 1) + ' / ' + chunks.length + ' csoport folyamatban...');
+
+                withRecaptcha('pdf_tool', function(token) {
+                    var formData = new FormData();
+                    formData.append('action', 'pdf_tool');
+                    formData.append('tool_type', 'merge');
+                    formData.append('sub_action', 'upload_batch');
+                    formData.append('g_recaptcha_response', token);
+                    
+                    $.each(chunk, function(idx, file) {
+                        formData.append('pdf_files[]', file);
+                    });
+
+                    $.ajax({
+                        type: 'POST',
+                        url: 'index.php',
+                        data: formData,
+                        processData: false,
+                        contentType: false,
+                        success: function(response) {
+                            if (response.status === 'success' && response.uploaded_files) {
+                                uploadedFiles = uploadedFiles.concat(response.uploaded_files);
+                                currentChunkIndex++;
+                                uploadNextChunk();
+                            } else {
+                                showPdfError(response.message || 'Hiba történt a fájlcsoport feltöltésekor.', 'merge');
+                            }
+                        },
+                        error: function() {
+                            showPdfError('Hálózati hiba a ' + (currentChunkIndex + 1) + '. csoport feltöltése során.', 'merge');
+                        }
+                    });
+                });
+            } else {
+                $('#pdfProgressBar').css('width', '75%');
+                $('#pdfStatusText').text('Összefűzés és konvertálás elindítása...');
+                triggerFinalMerge(uploadedFiles);
+            }
+        }
+
+        function triggerFinalMerge(filePaths) {
+            withRecaptcha('pdf_tool', function(token) {
+                var formData = new FormData();
+                formData.append('action', 'pdf_tool');
+                formData.append('tool_type', 'merge');
+                formData.append('g_recaptcha_response', token);
+                formData.append('pre_uploaded_files', JSON.stringify(filePaths));
+
+                $.ajax({
+                    type: 'POST',
+                    url: 'index.php',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        if (response.status === 'started' && response.job_id) {
+                            $('#pdfProgressBar').css('width', '80%');
+                            $('#pdfStatusText').text('Feldolgozás (pdftk)...');
+                            pollPdfStatus(response.job_id, 'merge');
+                        } else {
+                            showPdfError(response.message || 'Hiba az összefűzési folyamat indításakor.', 'merge');
+                        }
+                    },
+                    error: function() {
+                        showPdfError('Hálózati hiba az összefűzés indítása során.', 'merge');
+                    }
+                });
+            });
+        }
+
+        uploadNextChunk();
+        return;
+    }
+
+    // --- NORMÁL FELTÖLTÉS (Minden más, egyfájlos eszköz esetén) ---
     withRecaptcha('pdf_tool', function(token) {
         var formData = new FormData();
-        
         formData.append('action', 'pdf_tool'); 
         formData.append('tool_type', tool);
         formData.append('g_recaptcha_response', token);
@@ -231,7 +340,7 @@ window.executePdfAction = function() {
                     showPdfError(response.message || 'Hiba a feladat indításakor.', tool);
                 }
             },
-            error: function(xhr) {
+            error: function() {
                 showPdfError('Hálózati hiba a feltöltés során.', tool);
             }
         });
@@ -264,12 +373,8 @@ function pollPdfStatus(jobId, tool) {
 }
 
 function showPdfResult(job, tool) {
-    $('#pdfStatusContainer').hide();
-    $('#pdfResultFileName').text(job.download_name);
-    
     var downloadLink = 'index.php?action=download&job_id=' + encodeURIComponent(job.id) + '&token=' + encodeURIComponent(job.download_token);
     
-    // Gomb állapotának és feliratának alaphelyzetbe állítása új feladat esetén
     $('#pdfDownloadBtn')
         .removeClass('btn-secondary disabled')
         .addClass('btn-success')
@@ -277,6 +382,8 @@ function showPdfResult(job, tool) {
         .attr('href', downloadLink)
         .html('<i class="fas fa-download me-2"></i>Letöltés');
 
+    $('#pdfStatusContainer').hide();
+    $('#pdfResultFileName').text(job.download_name);
     $('#pdfResultContainer').show();
     
     if (tool === 'watermark') {
@@ -392,7 +499,6 @@ function showResult(job) {
     
     var downloadLink;
     if (job.direct_url) {
-        // Nyilvános PIM link: nincs Session védelem
         downloadLink = job.direct_url;
         $('#generatorSecurityWarning').hide();
         $('#qrCodeWrapper').show();
@@ -400,13 +506,11 @@ function showResult(job) {
         var fullUrl = downloadLink.indexOf('http') !== 0 ? window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1) + downloadLink : downloadLink;
         generateQRCode(fullUrl);
     } else {
-        // Helyi szerver link: Session + Token védelemmel
         downloadLink = 'index.php?action=download&job_id=' + encodeURIComponent(job.id) + '&token=' + encodeURIComponent(job.download_token);
         $('#generatorSecurityWarning').show();
         $('#qrCodeWrapper').hide(); 
     }
 
-    // Gomb állapotának alaphelyzetbe állítása az esetleges korábbi inaktiválás után
     $('#downloadBtn')
         .removeClass('btn-secondary disabled')
         .addClass('btn-success')

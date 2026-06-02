@@ -3,7 +3,7 @@
  * Fájl helye: php/worker.php
  * Funkció: Háttérben futó konvertálási és fájlfeldolgozási folyamat (CLI).
  * Indítása: php worker.php {JOB_ID}
- * Módosítás dátuma: 2026. április 02. 14:00:00
+ * Módosítás dátuma: 2026. június 02. 11:45:00
  */
 
 if (php_sapi_name() !== 'cli') {

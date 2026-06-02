@@ -2,14 +2,15 @@
 declare(strict_types=1);
 /**
  * Fájl helye: php/handlers/pdf_tool_handler.php
- * Funkció: PDF eszközök fogadása, validációja és biztonsági token generálása.
- * Módosítás dátuma: 2026. április 07. 16:00:00
+ * Funkció: Az összes PDF eszköz (beleértve a csoportos részfeltöltést is) fogadása és feldolgozása.
+ * Módosítás dátuma: 2026. június 02. 11:45:00
  */
 
 class PdfToolHandler {
     
     public function handle(): void {
         header('Content-Type: application/json');
+        global $lang;
 
         $token = $_POST['g_recaptcha_response'] ?? '';
         if (!RecaptchaService::verify((string)$token)) {
@@ -25,26 +26,74 @@ class PdfToolHandler {
             return;
         }
 
+        $subAction = $_POST['sub_action'] ?? '';
+
+        // --- 1. CSOPORTOS BATCH FELTÖLTÉSEK FOGADÁSA ÉS TÁROLÁSA ---
+        if ($subAction === 'upload_batch') {
+            $this->handleBatchUpload();
+            return;
+        }
+
         $uploadedPaths = [];
 
+        // --- 2. VÉGLEGES MEGRENDELÉS ÉS FELADAT INDÍTÁSA ---
         try {
-            if ($toolType === 'watermark') {
+            if ($toolType === 'merge') {
+                $preUploadedFilesJson = $_POST['pre_uploaded_files'] ?? '';
+                if (empty($preUploadedFilesJson)) {
+                    echo json_encode(['status' => 'error', 'message' => 'Hiányzó fájlok az összefűzéshez.']);
+                    return;
+                }
+
+                $uploadedPaths = json_decode($preUploadedFilesJson, true);
+                if (!is_array($uploadedPaths) || count($uploadedPaths) < 2) {
+                    echo json_encode([
+                        'status' => 'error', 
+                        'message' => $lang['err_pdf_min_two'] ?? 'Legalább két PDF fájl szükséges az összefűzéshez!'
+                    ]);
+                    return;
+                }
+
+                if (count($uploadedPaths) > 300) {
+                    echo json_encode(['status' => 'error', 'message' => 'Biztonsági korlát: maximum 300 fájl fűzhető össze!']);
+                    return;
+                }
+
+                // Szigorú útvonalellenőrzés (Path Traversal elleni védelem)
+                $realUploadsPath = realpath(UPLOADS_PATH);
+                if ($realUploadsPath === false) {
+                    echo json_encode(['status' => 'error', 'message' => 'Szerveroldali hiba: Átmeneti könyvtár nem érhető el.']);
+                    return;
+                }
+
+                foreach ($uploadedPaths as $path) {
+                    $realPath = realpath($path);
+                    if ($realPath === false || !file_exists($realPath)) {
+                        echo json_encode(['status' => 'error', 'message' => 'Feltöltött fájl nem található: ' . basename($path)]);
+                        return;
+                    }
+                    if (strpos($realPath, $realUploadsPath) !== 0) {
+                        echo json_encode(['status' => 'error', 'message' => 'Biztonsági hiba: Érvénytelen fájlútvonal.']);
+                        return;
+                    }
+                }
+            } elseif ($toolType === 'watermark') {
                 $uploadedPaths = $this->handleWatermarkUploads();
             } else {
-                $minFiles = ($toolType === 'merge') ? 2 : 1;
-                $uploadedPaths = $this->handleStandardUploads($minFiles);
+                $uploadedPaths = $this->handleStandardUploads(1);
             }
         } catch (\Exception $e) {
             echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
             return;
         }
 
+        // Kiterjesztés meghatározása
         $pagesParam = trim($_POST['pages'] ?? '');
         $extension = ($toolType === 'split' && empty($pagesParam)) ? 'zip' : 'pdf';
         
         $jobId = uniqid('job_');
         $baseName = 'Document_' . ucfirst($toolType) . '_' . date('Ymd_His');
-        $downloadToken = bin2hex(random_bytes(32)); // ÚJ: Biztonsági token
+        $downloadToken = bin2hex(random_bytes(32)); 
         
         $jobData = [
             'id' => $jobId,
@@ -52,8 +101,8 @@ class PdfToolHandler {
             'tool_type' => $toolType,
             'status' => 'pending', 
             'created_at' => time(),
-            'session_id' => session_id(), // ÚJ: Munkamenet azonosító rögzítése
-            'download_token' => $downloadToken, // ÚJ: Token rögzítése
+            'session_id' => session_id(), 
+            'download_token' => $downloadToken, 
             'input_files' => $uploadedPaths,
             'filename_base' => $baseName,
             'download_name' => $baseName . '.' . $extension,
@@ -75,6 +124,7 @@ class PdfToolHandler {
         echo json_encode([
             'status' => 'started', 
             'job_id' => $jobId,
+            'download_token' => $downloadToken,
             'message' => 'Feltöltés sikeres, feldolgozás elindítva...'
         ]);
     }
@@ -128,5 +178,48 @@ class PdfToolHandler {
         
         if (count($paths) !== 2) throw new \Exception('Hiba a vízjelek szerverre mentésekor.');
         return $paths;
+    }
+
+    private function handleBatchUpload(): void {
+        if (!isset($_FILES['pdf_files']) || !is_array($_FILES['pdf_files']['name'])) {
+            echo json_encode(['status' => 'error', 'message' => 'Nem érkeztek fájlok ebben a feltöltési csoportban.']);
+            return;
+        }
+
+        $files = $_FILES['pdf_files'];
+        $fileCount = count($files['name']);
+        $uploadedPaths = [];
+
+        if (!is_dir(UPLOADS_PATH)) {
+            mkdir(UPLOADS_PATH, 0777, true);
+        }
+
+        for ($i = 0; $i < $fileCount; $i++) {
+            if ($files['error'][$i] === UPLOAD_ERR_OK) {
+                $tmpName = $files['tmp_name'][$i];
+                $originalName = basename($files['name'][$i]);
+                $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+
+                if ($ext !== 'pdf' || mime_content_type($tmpName) !== 'application/pdf') {
+                    echo json_encode(['status' => 'error', 'message' => 'Érvénytelen fájlformátum: ' . htmlspecialchars($originalName)]);
+                    return;
+                }
+
+                $newPath = UPLOADS_PATH . '/' . uniqid('pdf_') . '_' . $i . '.pdf';
+                if (move_uploaded_file($tmpName, $newPath)) {
+                    $uploadedPaths[] = $newPath;
+                }
+            }
+        }
+
+        if (count($uploadedPaths) === 0) {
+            echo json_encode(['status' => 'error', 'message' => 'A csoportból egyetlen fájlt sem sikerült sikeresen elmenteni.']);
+            return;
+        }
+
+        echo json_encode([
+            'status' => 'success',
+            'uploaded_files' => $uploadedPaths
+        ]);
     }
 }

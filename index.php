@@ -3,7 +3,7 @@ declare(strict_types=1);
 /**
  * Fájl helye: php/index.php
  * Funkció: Belépési pont (Gateway), routing, autoloader, kivétel- és munkamenetkezelés.
- * Módosítás dátuma: 2026. április 07. 16:00:00
+ * Módosítás dátuma: 2026. június 02. 11:45:00
  */
 
 // 1. Biztonságos Munkamenet (Session) Indítása
